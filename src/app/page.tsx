@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { io } from "socket.io-client";
 
 import { icons } from "@/components/chat/icons";
 import type {
@@ -13,6 +12,17 @@ import type {
 } from "@/components/chat/types";
 import { ContactInfoDrawer } from "@/components/chat/ContactInfoDrawer";
 import { ChatPanel } from "@/components/chat/ChatPanel";
+
+const STORAGE_KEY = "shipper_demo_user";
+
+const DEMO_USERS: UserSummary[] = [
+  { id: "u1", name: "Adrian Kurt", imageUrl: null },
+  { id: "u2", name: "Yomi Immanuel", imageUrl: null },
+  { id: "u3", name: "Bianca Nubia", imageUrl: null },
+  { id: "u4", name: "Zender Lowre", imageUrl: null },
+  { id: "u5", name: "Palmer Dian", imageUrl: null },
+  { id: "u6", name: "Yuki Tanaka", imageUrl: null },
+];
 
 
 
@@ -25,6 +35,7 @@ export default function Home() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeChatTitle, setActiveChatTitle] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [threads, setThreads] = useState<Record<string, ChatMessage[]>>({});
   const [search, setSearch] = useState("");
   const [composer, setComposer] = useState("");
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -97,7 +108,7 @@ export default function Home() {
   }
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+    localStorage.removeItem(STORAGE_KEY);
     router.push("/login");
     router.refresh();
   }
@@ -105,63 +116,35 @@ export default function Home() {
   useEffect(() => {
     const saved = localStorage.getItem("theme");
     if (saved === "dark") document.documentElement.classList.add("dark");
-  }, []);
 
-  useEffect(() => {
-    void (async () => {
-      const res = await fetch("/api/auth/me", { cache: "no-store" });
-      const data = (await res.json().catch(() => null)) as null | {
-        user?: UserSummary | null;
-      };
-      setMe(data?.user ?? null);
-    })();
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    const user =
+      parsed && typeof parsed === "object"
+        ? {
+            id: typeof (parsed as any).id === "string" ? (parsed as any).id : "me",
+            name: typeof (parsed as any).name === "string" ? (parsed as any).name : "User",
+            imageUrl:
+              typeof (parsed as any).imageUrl === "string" || (parsed as any).imageUrl === null
+                ? (parsed as any).imageUrl
+                : null,
+          }
+        : null;
 
-    void (async () => {
-      setLoadingUsers(true);
-      const res = await fetch("/api/users", { cache: "no-store" });
-      const data = (await res.json().catch(() => null)) as null | {
-        users?: UserSummary[];
-      };
-      setUsers(Array.isArray(data?.users) ? data!.users : []);
-      setLoadingUsers(false);
-    })();
-  }, []);
+    if (!user) {
+      router.push("/login");
+      return;
+    }
 
-  useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
-    const shouldConnect = process.env.NODE_ENV !== "production" || Boolean(socketUrl);
-    if (!shouldConnect) return;
+    setMe(user);
 
-    const socket = socketUrl
-      ? io(socketUrl, { withCredentials: true })
-      : io({ withCredentials: true });
+    setLoadingUsers(true);
+    setUsers([user, ...DEMO_USERS]);
+    setLoadingUsers(false);
 
-    socket.on("presence:state", (payload: { onlineUserIds?: unknown }) => {
-      const ids = Array.isArray(payload?.onlineUserIds)
-        ? payload.onlineUserIds.filter((x): x is string => typeof x === "string")
-        : [];
-      setOnlineUserIds(new Set(ids));
-    });
-
-    socket.on(
-      "presence:update",
-      (payload: { userId?: unknown; online?: unknown }) => {
-        const userId = typeof payload?.userId === "string" ? payload.userId : null;
-        const online = typeof payload?.online === "boolean" ? payload.online : null;
-        if (!userId || online === null) return;
-        setOnlineUserIds((prev) => {
-          const next = new Set(prev);
-          if (online) next.add(userId);
-          else next.delete(userId);
-          return next;
-        });
-      },
-    );
-
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
+    // Demo presence: all contacts show offline by default.
+    setOnlineUserIds(new Set());
+  }, [router]);
 
   useEffect(() => {
     if (!activeUserId) {
@@ -171,84 +154,45 @@ export default function Home() {
       return;
     }
 
-    let cancelled = false;
     setLoadingMessages(true);
+    setActiveSessionId(activeUserId);
+    setActiveChatTitle(null);
     setMessages([]);
 
-    void (async () => {
-      const chatRes = await fetch(`/api/chats/with/${activeUserId}`, {
-        method: "POST",
-      });
-      if (!chatRes.ok) throw new Error("Failed to open chat");
-      const chatData = (await chatRes.json().catch(() => null)) as null | {
-        chat?: { id?: string; title?: string | null };
-      };
-
-      const sessionId = typeof chatData?.chat?.id === "string" ? chatData.chat.id : null;
-      const title = typeof chatData?.chat?.title === "string" ? chatData.chat.title : null;
-      if (!sessionId) throw new Error("Invalid chat response");
-      if (cancelled) return;
-
-      setActiveSessionId(sessionId);
-      setActiveChatTitle(title);
-
-      const msgRes = await fetch(`/api/sessions/${sessionId}/messages`, {
-        cache: "no-store",
-      });
-      const msgData = (await msgRes.json().catch(() => null)) as null | {
-        messages?: ChatMessage[];
-      };
-      if (cancelled) return;
-
-      setMessages(Array.isArray(msgData?.messages) ? msgData!.messages : []);
+    const nextMsgs = threads[activeUserId] ?? [];
+    // Slight delay to mimic loading.
+    const t = window.setTimeout(() => {
+      setMessages(nextMsgs);
       setLoadingMessages(false);
-    })().catch(() => {
-      if (cancelled) return;
-      setLoadingMessages(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeUserId]);
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [activeUserId, threads]);
 
   async function sendMessage() {
     const content = composer.trim();
     if (!content || sending) return;
 
-    let sessionId = activeSessionId;
-    if (!sessionId) {
-      const userId = activeUserId;
-      if (!userId) return;
-      try {
-        const chatRes = await fetch(`/api/chats/with/${userId}`, { method: "POST" });
-        if (!chatRes.ok) return;
-        const chatData = (await chatRes.json().catch(() => null)) as null | {
-          chat?: { id?: string; title?: string | null };
-        };
-        sessionId = typeof chatData?.chat?.id === "string" ? chatData.chat.id : null;
-        const title = typeof chatData?.chat?.title === "string" ? chatData.chat.title : null;
-        if (!sessionId) return;
-        setActiveSessionId(sessionId);
-        setActiveChatTitle(title);
-      } catch {
-        return;
-      }
-    }
+    const sessionId = activeSessionId;
+    const userId = activeUserId;
+    if (!sessionId || !userId) return;
 
     setSending(true);
     try {
-      const res = await fetch(`/api/sessions/${sessionId}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-      });
-      if (!res.ok) throw new Error("Send failed");
-      const data = (await res.json().catch(() => null)) as null | {
-        messages?: ChatMessage[];
+      const now = new Date().toISOString();
+      const newMessage: ChatMessage = {
+        id: `${Date.now()}`,
+        role: "USER",
+        content,
+        createdAt: now,
+        senderId: me?.id ?? "me",
       };
-      const newMessages = Array.isArray(data?.messages) ? data!.messages : [];
-      setMessages((prev) => [...prev, ...newMessages]);
+
+      setThreads((prev) => {
+        const existing = prev[userId] ?? [];
+        return { ...prev, [userId]: [...existing, newMessage] };
+      });
+
+      setMessages((prev) => [...prev, newMessage]);
       setComposer("");
     } finally {
       setSending(false);

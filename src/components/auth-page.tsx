@@ -17,6 +17,8 @@ export function AuthPage({ initialMode }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const storageKey = "shipper_demo_user";
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -29,21 +31,12 @@ export function AuthPage({ initialMode }: Props) {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: trimmed,
-          imageUrl: imageUrl.trim() ? imageUrl.trim() : undefined,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as null | {
-          error?: string;
-        };
-        throw new Error(data?.error ?? "Auth failed");
-      }
+      const user = {
+        id: "me",
+        name: trimmed,
+        imageUrl: imageUrl.trim() ? imageUrl.trim() : null,
+      };
+      localStorage.setItem(storageKey, JSON.stringify(user));
 
       router.push("/");
       router.refresh();
@@ -176,7 +169,7 @@ export function AuthPage({ initialMode }: Props) {
             </form>
 
             <div className="mt-5 text-xs text-zinc-400">
-              JWT cookie auth (MVP). Google OAuth can be added later.
+              Demo login (frontend-only). No backend required.
             </div>
           </div>
         </div>
