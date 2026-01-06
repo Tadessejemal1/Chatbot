@@ -30,21 +30,23 @@ export function ChatPanel({
   sendMessage: () => void;
 }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-6">
-      <ChatHeaderBar activeUser={activeUser} activeUserOnline={activeUserOnline} />
-      <ChatMessagesPane
-        loadingMessages={loadingMessages}
-        messages={messages}
-        meId={meId}
-        formatTime={formatTime}
-        messagesEndRef={messagesEndRef}
-      />
-      <ChatComposer
-        composer={composer}
-        setComposer={setComposer}
-        sending={sending}
-        sendMessage={sendMessage}
-      />
+    <section className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 w-full flex-1 flex-col gap-6 rounded-[24px] bg-white p-[24px]">
+        <ChatHeaderBar activeUser={activeUser} activeUserOnline={activeUserOnline} />
+        <ChatMessagesPane
+          loadingMessages={loadingMessages}
+          messages={messages}
+          meId={meId}
+          formatTime={formatTime}
+          messagesEndRef={messagesEndRef}
+        />
+        <ChatComposer
+          composer={composer}
+          setComposer={setComposer}
+          sending={sending}
+          sendMessage={sendMessage}
+        />
+      </div>
     </section>
   );
 }
