@@ -1,8 +1,9 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { io } from "socket.io-client";
 
 import { icons } from "@/components/chat/icons";
 import type {
@@ -14,7 +15,16 @@ import type {
 import { ContactInfoDrawer } from "@/components/chat/ContactInfoDrawer";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 
+const STORAGE_KEY = "shipper_demo_user";
 
+const DEMO_USERS: UserSummary[] = [
+  { id: "u1", name: "Adrian Kurt", imageUrl: null },
+  { id: "u2", name: "Yomi Immanuel", imageUrl: null },
+  { id: "u3", name: "Bianca Nubia", imageUrl: null },
+  { id: "u4", name: "Zender Lowre", imageUrl: null },
+  { id: "u5", name: "Palmer Dian", imageUrl: null },
+  { id: "u6", name: "Yuki Tanaka", imageUrl: null },
+];
 
 export default function Home() {
   const router = useRouter();
@@ -25,6 +35,7 @@ export default function Home() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeChatTitle, setActiveChatTitle] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [threads, setThreads] = useState<Record<string, ChatMessage[]>>({});
   const [search, setSearch] = useState("");
   const [composer, setComposer] = useState("");
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -97,7 +108,7 @@ export default function Home() {
   }
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+    localStorage.removeItem(STORAGE_KEY);
     router.push("/login");
     router.refresh();
   }
@@ -105,63 +116,104 @@ export default function Home() {
   useEffect(() => {
     const saved = localStorage.getItem("theme");
     if (saved === "dark") document.documentElement.classList.add("dark");
-  }, []);
 
-  useEffect(() => {
-    void (async () => {
-      const res = await fetch("/api/auth/me", { cache: "no-store" });
-      const data = (await res.json().catch(() => null)) as null | {
-        user?: UserSummary | null;
-      };
-      setMe(data?.user ?? null);
-    })();
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    const user =
+      parsed && typeof parsed === "object"
+        ? {
+            id: typeof (parsed as any).id === "string" ? (parsed as any).id : "me",
+            name: typeof (parsed as any).name === "string" ? (parsed as any).name : "User",
+            imageUrl:
+              typeof (parsed as any).imageUrl === "string" || (parsed as any).imageUrl === null
+                ? (parsed as any).imageUrl
+                : null,
+          }
+        : null;
 
-    void (async () => {
-      setLoadingUsers(true);
-      const res = await fetch("/api/users", { cache: "no-store" });
-      const data = (await res.json().catch(() => null)) as null | {
-        users?: UserSummary[];
-      };
-      setUsers(Array.isArray(data?.users) ? data!.users : []);
-      setLoadingUsers(false);
-    })();
-  }, []);
+    if (!user) {
+      router.push("/login");
+      return;
+    }
 
-  useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
-    const shouldConnect = process.env.NODE_ENV !== "production" || Boolean(socketUrl);
-    if (!shouldConnect) return;
+    setMe(user);
 
-    const socket = socketUrl
-      ? io(socketUrl, { withCredentials: true })
-      : io({ withCredentials: true });
+    setLoadingUsers(true);
+    setUsers([user, ...DEMO_USERS]);
+    setLoadingUsers(false);
 
-    socket.on("presence:state", (payload: { onlineUserIds?: unknown }) => {
-      const ids = Array.isArray(payload?.onlineUserIds)
-        ? payload.onlineUserIds.filter((x): x is string => typeof x === "string")
-        : [];
-      setOnlineUserIds(new Set(ids));
+    // Demo presence: all contacts show offline by default.
+    setOnlineUserIds(new Set());
+
+    const toTodayIso = (hour: number, minute: number) => {
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0).toISOString();
+    };
+
+    const contactIds = DEMO_USERS.map((u) => u.id);
+    setThreads((prev) => {
+      const next: Record<string, ChatMessage[]> = { ...prev };
+
+      for (const contactId of contactIds) {
+        if (next[contactId]?.length) continue;
+        next[contactId] = [
+          {
+            id: `${contactId}-seed-1`,
+            role: "USER",
+            content: "Hey, Jonjon",
+            createdAt: toTodayIso(10, 17),
+            senderId: contactId,
+          },
+          {
+            id: `${contactId}-seed-2`,
+            role: "USER",
+            content: "Can you help with with the last task for Eventora, please?",
+            createdAt: toTodayIso(10, 17),
+            senderId: contactId,
+          },
+          {
+            id: `${contactId}-seed-3`,
+            role: "USER",
+            content: "I'm little bit confused with the task.. 😊",
+            createdAt: toTodayIso(10, 17),
+            senderId: contactId,
+          },
+          {
+            id: `${contactId}-seed-4`,
+            role: "USER",
+            content: "it's done already, no worries!",
+            createdAt: toTodayIso(10, 22),
+            senderId: user.id,
+          },
+          {
+            id: `${contactId}-seed-5`,
+            role: "USER",
+            content: "what...",
+            createdAt: toTodayIso(10, 32),
+            senderId: contactId,
+          },
+          {
+            id: `${contactId}-seed-6`,
+            role: "USER",
+            content: "Really?! Thank you so much! 😍",
+            createdAt: toTodayIso(10, 32),
+            senderId: contactId,
+          },
+          {
+            id: `${contactId}-seed-7`,
+            role: "USER",
+            content: "anytime! my pleasure~ ❤️",
+            createdAt: toTodayIso(11, 1),
+            senderId: user.id,
+          },
+        ];
+      }
+
+      return next;
     });
 
-    socket.on(
-      "presence:update",
-      (payload: { userId?: unknown; online?: unknown }) => {
-        const userId = typeof payload?.userId === "string" ? payload.userId : null;
-        const online = typeof payload?.online === "boolean" ? payload.online : null;
-        if (!userId || online === null) return;
-        setOnlineUserIds((prev) => {
-          const next = new Set(prev);
-          if (online) next.add(userId);
-          else next.delete(userId);
-          return next;
-        });
-      },
-    );
-
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
+    setActiveUserId((current) => current ?? contactIds[0] ?? null);
+  }, [router]);
 
   useEffect(() => {
     if (!activeUserId) {
@@ -171,85 +223,66 @@ export default function Home() {
       return;
     }
 
-    let cancelled = false;
     setLoadingMessages(true);
+    setActiveSessionId(activeUserId);
+    setActiveChatTitle(null);
     setMessages([]);
 
-    void (async () => {
-      const chatRes = await fetch(`/api/chats/with/${activeUserId}`, {
-        method: "POST",
-      });
-      if (!chatRes.ok) throw new Error("Failed to open chat");
-      const chatData = (await chatRes.json().catch(() => null)) as null | {
-        chat?: { id?: string; title?: string | null };
-      };
-
-      const sessionId = typeof chatData?.chat?.id === "string" ? chatData.chat.id : null;
-      const title = typeof chatData?.chat?.title === "string" ? chatData.chat.title : null;
-      if (!sessionId) throw new Error("Invalid chat response");
-      if (cancelled) return;
-
-      setActiveSessionId(sessionId);
-      setActiveChatTitle(title);
-
-      const msgRes = await fetch(`/api/sessions/${sessionId}/messages`, {
-        cache: "no-store",
-      });
-      const msgData = (await msgRes.json().catch(() => null)) as null | {
-        messages?: ChatMessage[];
-      };
-      if (cancelled) return;
-
-      setMessages(Array.isArray(msgData?.messages) ? msgData!.messages : []);
+    const nextMsgs = threads[activeUserId] ?? [];
+    // Slight delay to mimic loading.
+    const t = window.setTimeout(() => {
+      setMessages(nextMsgs);
       setLoadingMessages(false);
-    })().catch(() => {
-      if (cancelled) return;
-      setLoadingMessages(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeUserId]);
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [activeUserId, threads]);
 
   async function sendMessage() {
     const content = composer.trim();
     if (!content || sending) return;
 
-    let sessionId = activeSessionId;
-    if (!sessionId) {
-      const userId = activeUserId;
-      if (!userId) return;
-      try {
-        const chatRes = await fetch(`/api/chats/with/${userId}`, { method: "POST" });
-        if (!chatRes.ok) return;
-        const chatData = (await chatRes.json().catch(() => null)) as null | {
-          chat?: { id?: string; title?: string | null };
-        };
-        sessionId = typeof chatData?.chat?.id === "string" ? chatData.chat.id : null;
-        const title = typeof chatData?.chat?.title === "string" ? chatData.chat.title : null;
-        if (!sessionId) return;
-        setActiveSessionId(sessionId);
-        setActiveChatTitle(title);
-      } catch {
-        return;
-      }
-    }
+    const sessionId = activeSessionId;
+    const userId = activeUserId;
+    if (!sessionId || !userId) return;
 
     setSending(true);
     try {
-      const res = await fetch(`/api/sessions/${sessionId}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-      });
-      if (!res.ok) throw new Error("Send failed");
-      const data = (await res.json().catch(() => null)) as null | {
-        messages?: ChatMessage[];
+      const now = new Date().toISOString();
+      const newMessage: ChatMessage = {
+        id: `${Date.now()}`,
+        role: "USER",
+        content,
+        createdAt: now,
+        senderId: me?.id ?? "me",
       };
-      const newMessages = Array.isArray(data?.messages) ? data!.messages : [];
-      setMessages((prev) => [...prev, ...newMessages]);
+
+      setThreads((prev) => {
+        const existing = prev[userId] ?? [];
+        return { ...prev, [userId]: [...existing, newMessage] };
+      });
+
+      setMessages((prev) => [...prev, newMessage]);
       setComposer("");
+
+      // Demo auto-reply from the contact (avoid echoing the user's message).
+      const replyText = "Got it — I’ll take a look and get back to you. 👍";
+      const reply: ChatMessage = {
+        id: `${Date.now()}-r`,
+        role: "ASSISTANT",
+        content: replyText,
+        createdAt: new Date(Date.now() + 500).toISOString(),
+        senderId: userId,
+      };
+
+      window.setTimeout(() => {
+        setThreads((prev) => {
+          const existing = prev[userId] ?? [];
+          return { ...prev, [userId]: [...existing, reply] };
+        });
+
+        // Keep the UI snappy if the user is still on this chat.
+        if (activeUserId === userId) setMessages((prev) => [...prev, reply]);
+      }, 500);
     } finally {
       setSending(false);
     }
@@ -303,14 +336,24 @@ export default function Home() {
     <div className="h-screen w-screen bg-[#F3F3EE] text-zinc-900">
       <div className="flex h-full w-full flex-col gap-[24px] p-[24px]">
         <div className="flex items-center gap-[24px]">
-          <div className="w-[76px]" />
+          <div className="flex w-[76px] items-center justify-center">
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              className="grid h-11 w-11 place-items-center"
+              aria-label="Open menu"
+              type="button"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/Container(1).svg" alt="" className="h-11 w-11" />
+            </button>
+          </div>
           <header className="flex h-[56px] flex-1 items-center justify-between gap-[24px] rounded-[16px] border border-zinc-200 bg-white px-[24px] py-[12px]">
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="inline-flex h-10 items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-900"
+                className="inline-flex h-10 items-center gap-2 bg-white px-4 text-sm font-medium text-zinc-900"
               >
-                <span className="text-zinc-500">{icons.msg}</span>
+                <img src="/Vector(4).svg" alt="" className="h-4 w-4" />
                 Message
               </button>
             </div>
@@ -331,13 +374,13 @@ export default function Home() {
                 className="grid h-10 w-10 place-items-center rounded-2xl text-zinc-600 hover:bg-zinc-100"
                 aria-label="Notifications"
               >
-                {icons.bell}
+                <img src="/Vector(3).svg" alt="" className="h-5 w-5" />
               </button>
               <button
                 className="grid h-10 w-10 place-items-center rounded-2xl text-zinc-600 hover:bg-zinc-100"
                 aria-label="Settings"
               >
-                {icons.settings}
+                <img src="/Vector(2).svg" alt="" className="h-5 w-5" />
               </button>
 
               <div className="mx-1 h-6 w-px bg-zinc-200" />
@@ -364,20 +407,11 @@ export default function Home() {
           <aside className="flex h-full w-[76px] flex-col items-center justify-between px-[16px] py-[24px]">
             <div className="flex w-full flex-col items-center gap-5">
               <button
-                onClick={() => setMenuOpen((v) => !v)}
-                className="grid h-11 w-11 place-items-center"
-                aria-label="Open menu"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/Container(1).svg" alt="" className="h-11 w-11" />
-              </button>
-
-              <button
                 type="button"
                 className="grid h-11 w-11 place-items-center rounded-2xl text-zinc-900 hover:bg-white"
                 aria-label="Home"
               >
-                {icons.home}
+                <img src="/Vector(1).svg" alt="" className="h-5 w-5" />
               </button>
 
               <button
@@ -385,7 +419,7 @@ export default function Home() {
                 className="grid h-11 w-11 place-items-center rounded-2xl border border-emerald-600 bg-[#F0FDF4] text-zinc-900"
                 aria-label="Messages"
               >
-                {icons.chat}
+                <img src="/Vector(5).svg" alt="" className="h-5 w-5" />
               </button>
 
               <button
@@ -393,7 +427,7 @@ export default function Home() {
                 className="grid h-11 w-11 place-items-center rounded-2xl text-zinc-900 hover:bg-white"
                 aria-label="Explore"
               >
-                {icons.compass}
+                <img src="/Vector(6).svg" alt="" className="h-5 w-5" />
               </button>
 
               <button
@@ -401,7 +435,7 @@ export default function Home() {
                 className="grid h-11 w-11 place-items-center rounded-2xl text-zinc-900 hover:bg-white"
                 aria-label="Files"
               >
-                {icons.folder}
+                <img src="/Vector(7).svg" alt="" className="h-5 w-5" />
               </button>
 
               <button
@@ -409,7 +443,7 @@ export default function Home() {
                 className="grid h-11 w-11 place-items-center rounded-2xl text-zinc-900 hover:bg-white"
                 aria-label="Media"
               >
-                {icons.image}
+                <img src="/Vector(8).svg" alt="" className="h-5 w-5" />
               </button>
             </div>
 
@@ -420,7 +454,7 @@ export default function Home() {
               className="mb-5 grid h-11 w-11 place-items-center rounded-2xl text-zinc-900 hover:bg-white"
               aria-label="Magic"
             >
-              {icons.sparkle}
+              <img src="/Vector(9).svg" alt="" className="h-5 w-5" />
             </button>
 
             <div className="mb-2 grid h-12 w-12 place-items-center overflow-hidden rounded-full bg-zinc-200">
@@ -439,22 +473,9 @@ export default function Home() {
             <div className="pointer-events-auto fixed inset-0 z-50">
               <div
                 ref={menuRef}
-                className="absolute left-4 top-16 w-[320px] rounded-3xl border border-zinc-200 bg-white p-3 shadow-lg"
+                className="absolute left-4 top-16 flex h-[428px] w-[307px] flex-col gap-[4px] rounded-[16px] border border-zinc-200 bg-white p-[4px] opacity-100 shadow-lg"
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                  }}
-                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-zinc-50"
-                >
-                  <span className="grid h-8 w-8 place-items-center rounded-2xl bg-zinc-50 text-zinc-700">
-                    {icons.msg}
-                  </span>
-                  <span className="text-sm font-semibold">Message</span>
-                </button>
-
-                <div className="mt-2 rounded-2xl bg-zinc-50 p-2">
+                <div className="rounded-2xl bg-zinc-50 p-[4px]">
                   <button
                     type="button"
                     onClick={() => {
@@ -492,15 +513,15 @@ export default function Home() {
                       })();
                     }}
                     disabled={!activeSessionId}
-                    className="mt-2 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-white disabled:opacity-50"
+                    className="mt-[4px] flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-zinc-900 hover:bg-white disabled:opacity-50"
                   >
                     <span className="grid h-8 w-8 place-items-center rounded-2xl bg-white text-zinc-700">
                       {icons.pencil}
                     </span>
-                    <span className="text-sm font-medium">Rename file</span>
+                    <span className="text-sm font-medium text-black">Rename file</span>
                   </button>
 
-                  <div className="mt-2 border-t border-zinc-200/60 pt-3">
+                  <div className="mt-[4px] border-t border-zinc-200/60 pt-[12px]">
                     <div className="px-3">
                       <div className="text-sm font-semibold">{me?.name ?? ""}</div>
                       <div className="text-xs text-zinc-500">
@@ -508,7 +529,7 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <div className="mt-3 rounded-2xl bg-white p-3">
+                    <div className="mt-[12px] rounded-2xl bg-white p-3">
                       <div className="flex items-center justify-between text-xs text-zinc-500">
                         <div>Credits</div>
                         <div>Renews in</div>
@@ -533,7 +554,7 @@ export default function Home() {
                   onClick={() => {
                     window.alert("Coming soon");
                   }}
-                  className="mt-3 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-zinc-50"
+                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-zinc-50"
                 >
                   <span className="grid h-9 w-9 place-items-center rounded-2xl bg-zinc-50 text-zinc-700">
                     {icons.gift}
@@ -544,7 +565,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={toggleTheme}
-                  className="mt-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-zinc-50"
+                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-zinc-50"
                 >
                   <span className="grid h-9 w-9 place-items-center rounded-2xl bg-zinc-50 text-zinc-700">
                     {icons.sun}
@@ -558,7 +579,7 @@ export default function Home() {
                     setMenuOpen(false);
                     void logout();
                   }}
-                  className="mt-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-zinc-50"
+                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-zinc-50"
                 >
                   <span className="grid h-9 w-9 place-items-center rounded-2xl bg-zinc-50 text-zinc-700">
                     {icons.logout}
@@ -656,7 +677,7 @@ export default function Home() {
                 className="grid h-10 w-10 place-items-center rounded-xl border border-zinc-200 bg-white text-zinc-600"
                 aria-label="Filter"
               >
-                {icons.filter}
+                <img src="/Vector(12).svg" alt="" className="h-5 w-5" />
               </button>
             </div>
 

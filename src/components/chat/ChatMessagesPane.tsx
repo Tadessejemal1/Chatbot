@@ -53,8 +53,13 @@ export function ChatMessagesPane({
                     {isMine ? (
                       <div className="mt-1 flex justify-end gap-1 pr-1 text-[11px] text-zinc-400">
                         {time ? <span>{time}</span> : null}
-                        <span className="grid h-3.5 w-3.5 place-items-center text-emerald-600">
-                          {icons.check}
+                        <span className="relative h-3.5 w-5 text-emerald-600" aria-label="Delivered">
+                          <span className="absolute left-0 top-0 origin-top-left scale-[0.7]">
+                            {icons.check}
+                          </span>
+                          <span className="absolute left-[6px] top-0 origin-top-left scale-[0.7]">
+                            {icons.check}
+                          </span>
                         </span>
                       </div>
                     ) : null}
